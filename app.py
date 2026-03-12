@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Gearbox Design Tool", layout="wide")
 
 DATA_FILE = Path("data/Gearbox Design Guide Data.xlsx")
-REFERENCE_IMAGE = Path("assets/Gearbox_Housing_Reference.png")
+REFERENCE_IMAGE = Path("assets/gearbox_housing_reference.png")
 
 STAGE_SHEETS = {
     "Stage 2": "SEN - Stage2",

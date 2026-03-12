@@ -81,11 +81,22 @@ def safe_fourth_root(value: float) -> float:
     return value ** 0.25
 
 
-def calculate_housing_dimensions(T0: float, Di: float, F: int, a1: float, d2s_ratio: float) -> list[dict]:
+def calculate_housing_dimensions(
+    T0: float,
+    Di: float,
+    F: int,
+    a1: float,
+    d2s_ratio: float,
+    B_ratio: float,
+    delta_b_ratio: float,
+    E: float,
+) -> list[dict]:
     w1_raw = 3.56 * safe_fourth_root(T0)
     w1 = max(w1_raw, 6)
+
     w2_raw = 0.9 * w1
     w2 = max(w2_raw, 6)
+
     w3 = 1.5 * w2
     r1 = w1
     r2 = w2
@@ -104,9 +115,12 @@ def calculate_housing_dimensions(T0: float, Di: float, F: int, a1: float, d2s_ra
 
     d2_raw = 3.76 * safe_fourth_root(T0)
     d2 = max(d2_raw, 10)
+
     d2s = d2s_ratio * d2
+
     d1_raw = 4.47 * safe_fourth_root(T0) * math.sqrt(2 / F)
     d1 = max(d1_raw, 10)
+
     d3 = max(0.5 * d2, 8)
     d4 = max(0.5 * d2, 8)
     f1 = 1.5 * d2
@@ -114,6 +128,9 @@ def calculate_housing_dimensions(T0: float, Di: float, F: int, a1: float, d2s_ra
     p1 = 1.5 * d1
     b2 = 3 * d2
     b1 = 4 * d1
+
+    B = B_ratio * d2
+    delta_b = delta_b_ratio * d2
 
     return [
         {"Name": "Wall thickness of housing base", "Symbol": "w1", "Value": w1, "Unit": "mm", "Remark": ">= 6"},
@@ -143,6 +160,9 @@ def calculate_housing_dimensions(T0: float, Di: float, F: int, a1: float, d2s_ra
         {"Name": "Thickness of foundation paws", "Symbol": "p1", "Value": p1, "Unit": "mm", "Remark": ""},
         {"Name": "Width of housing flange", "Symbol": "b2", "Value": b2, "Unit": "mm", "Remark": "Check space for wrench"},
         {"Name": "Width of foundation paws", "Symbol": "b1", "Value": b1, "Unit": "mm", "Remark": "Check space for wrench"},
+        {"Name": "Width of bearing lugs", "Symbol": "B", "Value": B, "Unit": "mm", "Remark": "To be confirmed with bearing and end cap dimensions"},
+        {"Name": "Distance from tie bolt axis to bearing seat bore", "Symbol": "delta_b", "Value": delta_b, "Unit": "mm", "Remark": "Check tie bolt hole does not intersect with end cap screw holes"},
+        {"Name": "Width of housing", "Symbol": "E", "Value": E, "Unit": "mm", "Remark": "The same for all bearing lugs"},
     ]
 
 
@@ -156,7 +176,7 @@ with lookup_tab:
 
     if not workbook_data:
         st.warning(
-            "No workbook found yet. Put your Excel file at `data/stage_parameters.xlsx` and make sure the sheet names match the ones in the code."
+            "No workbook found yet. Put your Excel file at `data/Gearbox Design Guide Data.xlsx` and make sure the sheet names match the ones in the code."
         )
     else:
         left, right = st.columns([1, 2])
@@ -200,13 +220,26 @@ with calculator_tab:
     with col1:
         T0 = st.number_input("Torque (T0)", min_value=0.01, value=1000.0, step=10.0)
         Di = st.number_input("Diameter (Di)", min_value=0.01, value=100.0, step=1.0)
+        E = st.number_input("Width of housing (E)", min_value=0.01, value=200.0, step=1.0)
     with col2:
         F = st.number_input("Number of bolts (F)", min_value=1, value=8, step=1)
         a1 = st.number_input("a1", min_value=0.01, value=100.0, step=1.0)
     with col3:
-        d2s_ratio = st.slider("Short tie bolt factor", min_value=0.70, max_value=1.00, value=0.80, step=0.05)
+        d2s_ratio = st.slider("Short tie bolt ratio (d2s / d2)", min_value=0.70, max_value=1.00, value=0.80, step=0.05)
+        B_ratio = st.slider("Bearing lug width ratio (B / d2)", min_value=3.0, max_value=3.5, value=3.2, step=0.1)
+        delta_b_ratio = st.slider("Bolt axis distance ratio (δb / d2)", min_value=1.0, max_value=1.2, value=1.1, step=0.05)
 
-    calculated_rows = calculate_housing_dimensions(T0=T0, Di=Di, F=int(F), a1=a1, d2s_ratio=d2s_ratio)
+    calculated_rows = calculate_housing_dimensions(
+        T0=T0,
+        Di=Di,
+        F=int(F),
+        a1=a1,
+        d2s_ratio=d2s_ratio,
+        B_ratio=B_ratio,
+        delta_b_ratio=delta_b_ratio,
+        E=E,
+    )
+
     calc_df = pd.DataFrame(calculated_rows)
     calc_df["Value"] = calc_df["Value"].apply(format_value)
 
@@ -218,9 +251,10 @@ with calculator_tab:
         "w2": next(item["Value"] for item in calculated_rows if item["Symbol"] == "w2"),
         "d2": next(item["Value"] for item in calculated_rows if item["Symbol"] == "d2"),
         "d1": next(item["Value"] for item in calculated_rows if item["Symbol"] == "d1"),
-        "H": next(item["Value"] for item in calculated_rows if item["Symbol"] == "H"),
-        "b2": next(item["Value"] for item in calculated_rows if item["Symbol"] == "b2"),
+        "B": next(item["Value"] for item in calculated_rows if item["Symbol"] == "B"),
+        "delta_b": next(item["Value"] for item in calculated_rows if item["Symbol"] == "delta_b"),
     }
+
     metric_cols = st.columns(3)
     for i, (label, value) in enumerate(metrics.items()):
         metric_cols[i % 3].metric(label=label, value=format_value(value))
@@ -229,7 +263,8 @@ st.divider()
 st.markdown(
     """
 **Notes**
-- The calculator applies the minimum limits shown in your design sheet where needed
-- We can next add grouped sections, PDF export, and drawing-based outputs
+- The calculator applies the minimum limits shown in the design sheet where needed
+- B, delta_b, d2s are calculated as a factor times d2
+- E is treated as a manual design input
 """
 )

@@ -7,6 +7,8 @@ import streamlit as st
 st.set_page_config(page_title="Gearbox Design Tool", layout="wide")
 
 DATA_FILE = Path("data/Gearbox Design Guide Data.xlsx")
+REFERENCE_IMAGE = Path("assets/Gearbox_Housing_Reference.png")
+
 STAGE_SHEETS = {
     "Stage 2": "SEN - Stage2",
     "Stage 3": "SZN - Stage3",
@@ -139,14 +141,14 @@ def calculate_housing_dimensions(
         {"Name": "Base rib thickness next to wall", "Symbol": "r1", "Value": r1, "Unit": "mm", "Remark": ""},
         {"Name": "Cover rib thickness next to wall", "Symbol": "r2", "Value": r2, "Unit": "mm", "Remark": ""},
         {"Name": "Casting slope of ribs", "Symbol": "sR", "Value": sR, "Unit": "deg", "Remark": "approx 1:30"},
-        {"Name": "Outer diameter of each bearing lug", "Symbol": "Phi_i", "Value": phi_i, "Unit": "mm", "Remark": "i = 0,1,2,...,n"},
+        {"Name": "Outer diameter of each bearing lug", "Symbol": "Φi", "Value": phi_i, "Unit": "mm", "Remark": "i = 0,1,2,...,n"},
         {"Name": "Casting slope of bearing lugs", "Symbol": "sL", "Value": sL, "Unit": "deg", "Remark": "approx 1:10"},
         {"Name": "Base wall-lug axial transition", "Symbol": "x1", "Value": x1, "Unit": "mm", "Remark": ""},
         {"Name": "Cover wall-lug axial transition", "Symbol": "x2", "Value": x2, "Unit": "mm", "Remark": ""},
         {"Name": "Base wall-lug vertical transition", "Symbol": "y1", "Value": y1, "Unit": "mm", "Remark": ""},
         {"Name": "Cover wall-lug vertical transition", "Symbol": "y2", "Value": y2, "Unit": "mm", "Remark": ""},
-        {"Name": "Distance between gear and housing wall", "Symbol": "delta_w", "Value": delta_w, "Unit": "mm", "Remark": ""},
-        {"Name": "Distance between gears", "Symbol": "delta_g", "Value": delta_g, "Unit": "mm", "Remark": ""},
+        {"Name": "Distance between gear and housing wall", "Symbol": "δw", "Value": delta_w, "Unit": "mm", "Remark": ""},
+        {"Name": "Distance between gears", "Symbol": "δg", "Value": delta_g, "Unit": "mm", "Remark": ""},
         {"Name": "Housing shaft height", "Symbol": "H", "Value": H, "Unit": "mm", "Remark": ""},
         {"Name": "Thickness of housing base lifting hooks", "Symbol": "h1", "Value": h1, "Unit": "mm", "Remark": ""},
         {"Name": "Thickness of housing cover lifting hooks", "Symbol": "h2", "Value": h2, "Unit": "mm", "Remark": "Alternative variant to eye bolts"},
@@ -161,7 +163,7 @@ def calculate_housing_dimensions(
         {"Name": "Width of housing flange", "Symbol": "b2", "Value": b2, "Unit": "mm", "Remark": "Check space for wrench"},
         {"Name": "Width of foundation paws", "Symbol": "b1", "Value": b1, "Unit": "mm", "Remark": "Check space for wrench"},
         {"Name": "Width of bearing lugs", "Symbol": "B", "Value": B, "Unit": "mm", "Remark": "To be confirmed with bearing and end cap dimensions"},
-        {"Name": "Distance from tie bolt axis to bearing seat bore", "Symbol": "delta_b", "Value": delta_b, "Unit": "mm", "Remark": "Check tie bolt hole does not intersect with end cap screw holes"},
+        {"Name": "Distance from tie bolt axis to bearing seat bore", "Symbol": "δb", "Value": delta_b, "Unit": "mm", "Remark": "Check tie bolt hole does not intersect with end cap screw holes"},
         {"Name": "Width of housing", "Symbol": "E", "Value": E, "Unit": "mm", "Remark": "The same for all bearing lugs"},
     ]
 
@@ -193,6 +195,7 @@ with lookup_tab:
 
         with right:
             st.subheader("Result")
+
             if "Size" in stage_df.columns:
                 row = find_row_by_size(stage_df, selected_size)
 
@@ -216,18 +219,54 @@ with lookup_tab:
 with calculator_tab:
     st.subheader("Housing Dimension Calculator")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        T0 = st.number_input("Torque (T0)", min_value=0.01, value=1000.0, step=10.0)
-        Di = st.number_input("Diameter (Di)", min_value=0.01, value=100.0, step=1.0)
-        E = st.number_input("Width of housing (E)", min_value=0.01, value=200.0, step=1.0)
-    with col2:
-        F = st.number_input("Number of bolts (F)", min_value=1, value=8, step=1)
-        a1 = st.number_input("a1", min_value=0.01, value=100.0, step=1.0)
-    with col3:
-        d2s_ratio = st.slider("Short tie bolt ratio (d2s / d2)", min_value=0.70, max_value=1.00, value=0.80, step=0.05)
-        B_ratio = st.slider("Bearing lug width ratio (B / d2)", min_value=3.0, max_value=3.5, value=3.2, step=0.1)
-        delta_b_ratio = st.slider("Bolt axis distance ratio (δb / d2)", min_value=1.0, max_value=1.2, value=1.1, step=0.05)
+    input_col, image_col = st.columns([1, 1])
+
+    with input_col:
+        st.markdown("### Inputs")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            T0 = st.number_input("Torque (T0)", min_value=0.01, value=1000.0, step=10.0)
+            Di = st.number_input("Diameter (Di)", min_value=0.01, value=100.0, step=1.0)
+            E = st.number_input("Width of housing (E)", min_value=0.01, value=200.0, step=1.0)
+
+        with col2:
+            F = st.number_input("Number of bolts (F)", min_value=1, value=8, step=1)
+            a1 = st.number_input("a1", min_value=0.01, value=100.0, step=1.0)
+
+        with col3:
+            d2s_ratio = st.slider(
+                "Short tie bolt ratio (d2s / d2)",
+                min_value=0.70,
+                max_value=1.00,
+                value=0.80,
+                step=0.05,
+            )
+            B_ratio = st.slider(
+                "Bearing lug width ratio (B / d2)",
+                min_value=3.0,
+                max_value=3.5,
+                value=3.2,
+                step=0.1,
+            )
+            delta_b_ratio = st.slider(
+                "Bolt axis distance ratio (δb / d2)",
+                min_value=1.0,
+                max_value=1.2,
+                value=1.1,
+                step=0.05,
+            )
+
+    with image_col:
+        st.markdown("### Reference Drawing")
+        if REFERENCE_IMAGE.exists():
+            st.image(
+                str(REFERENCE_IMAGE),
+                caption="Gearbox housing dimension reference",
+                use_container_width=True,
+            )
+        else:
+            st.info("Add the reference drawing at `assets/gearbox_housing_reference.png` to display it here.")
 
     calculated_rows = calculate_housing_dimensions(
         T0=T0,
@@ -243,6 +282,7 @@ with calculator_tab:
     calc_df = pd.DataFrame(calculated_rows)
     calc_df["Value"] = calc_df["Value"].apply(format_value)
 
+    st.subheader("Calculated Results")
     st.dataframe(calc_df, use_container_width=True, hide_index=True)
 
     st.subheader("Key Outputs")
@@ -252,7 +292,7 @@ with calculator_tab:
         "d2": next(item["Value"] for item in calculated_rows if item["Symbol"] == "d2"),
         "d1": next(item["Value"] for item in calculated_rows if item["Symbol"] == "d1"),
         "B": next(item["Value"] for item in calculated_rows if item["Symbol"] == "B"),
-        "delta_b": next(item["Value"] for item in calculated_rows if item["Symbol"] == "delta_b"),
+        "δb": next(item["Value"] for item in calculated_rows if item["Symbol"] == "δb"),
     }
 
     metric_cols = st.columns(3)
@@ -264,7 +304,7 @@ st.markdown(
     """
 **Notes**
 - The calculator applies the minimum limits shown in the design sheet where needed
-- B, delta_b, d2s are calculated as a factor times d2
-- E is treated as a manual design input
+- `B`, `δb`, and `d2s` are calculated as a factor times `d2`
+- `E` is treated as a manual design input
 """
 )

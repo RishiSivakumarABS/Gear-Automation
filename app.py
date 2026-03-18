@@ -188,13 +188,17 @@ def get_power_table_options(power_df: pd.DataFrame):
     if power_df.empty:
         return [], [], []
 
-    if "Ratio" not in power_df.columns or "Speed1" not in power_df.columns:
-        return [], [], []
+    required_cols = ["Ratio", "Speed1"]
+    for col in required_cols:
+        if col not in power_df.columns:
+            return [], [], []
 
-    size_columns = [col for col in power_df.columns if col not in ["Ratio", "Speed1"]]
+    ignored_columns = ["Ratio", "Speed1", "Speed2"]
+    size_columns = [col for col in power_df.columns if col not in ignored_columns]
+
     sizes = [normalize_size_value(col) for col in size_columns]
     ratios = sorted(power_df["Ratio"].dropna().apply(normalize_ratio_value).unique().tolist(), key=float)
-    speeds = sorted(power_df["Speed1"].dropna().astype(int).unique().tolist(), reverse=True)
+    speeds = [speed for speed in [1500, 1000, 750] if speed in power_df["Speed1"].dropna().astype(int).unique().tolist()]
 
     return sizes, ratios, speeds
 
@@ -205,7 +209,7 @@ def find_power_value(power_df: pd.DataFrame, selected_size, selected_ratio, sele
 
     size_col = None
     for col in power_df.columns:
-        if col in ["Ratio", "Speed1"]:
+        if col in ["Ratio", "Speed1", "Speed2"]:
             continue
         if normalize_size_value(col) == selected_size:
             size_col = col

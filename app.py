@@ -6,13 +6,20 @@ import streamlit as st
 
 st.set_page_config(page_title="Gearbox Design Tool", layout="wide")
 
-DATA_FILE = Path("data/Gearbox Design Guide Data.xlsx")
+GUIDE_FILE = Path("data/Gearbox Design Guide Data.xlsx")
+POWER_FILE = Path("data/Power to Torque.xlsx")
 REFERENCE_IMAGE = Path("assets/gearbox_housing_reference.png")
 
 STAGE_SHEETS = {
-    "Stage 2": "SEN - Stage2",
-    "Stage 3": "SZN - Stage3",
-    "Stage 4": "SDN - Stage4",
+    "Stage 1": "SEN - Stage1",
+    "Stage 2": "SZN - Stage2",
+    "Stage 3": "SDN - Stage3",
+}
+
+POWER_STAGE_SHEETS = {
+    "Stage 1": "SEN - Stage 1",
+    "Stage 2": "SZN - Stage 2",
+    "Stage 3": "SDN - Stage 3",
 }
 
 
@@ -21,14 +28,14 @@ def clean_column_name(col: str) -> str:
 
 
 @st.cache_data
-def load_workbook(file_path: Path) -> dict[str, pd.DataFrame]:
+def load_workbook(file_path: Path, stage_sheet_map: dict[str, str]) -> dict[str, pd.DataFrame]:
     if not file_path.exists():
         return {}
 
     excel_file = pd.ExcelFile(file_path)
     sheets = {}
 
-    for stage_label, sheet_name in STAGE_SHEETS.items():
+    for stage_label, sheet_name in stage_sheet_map.items():
         if sheet_name in excel_file.sheet_names:
             df = pd.read_excel(file_path, sheet_name=sheet_name)
             df.columns = [clean_column_name(c) for c in df.columns]
@@ -46,6 +53,15 @@ def normalize_size_value(value):
         if number.is_integer():
             return int(number)
         return number
+    except Exception:
+        return str(value).strip()
+
+
+def normalize_ratio_value(value):
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
     except Exception:
         return str(value).strip()
 
@@ -168,13 +184,130 @@ def calculate_housing_dimensions(
     ]
 
 
-st.title("Gearbox Design Tool")
-st.caption("Lookup stage parameters from Excel or calculate housing dimensions from input values.")
+def get_power_table_options(power_df: pd.DataFrame):
+    if power_df.empty:
+        return [], [], []
 
-lookup_tab, calculator_tab = st.tabs(["Stage Lookup", "Housing Calculator"])
+    if "Ratio" not in power_df.columns or "Speed1" not in power_df.columns:
+        return [], [], []
+
+    size_columns = [col for col in power_df.columns if col not in ["Ratio", "Speed1"]]
+    sizes = [normalize_size_value(col) for col in size_columns]
+    ratios = sorted(power_df["Ratio"].dropna().apply(normalize_ratio_value).unique().tolist(), key=float)
+    speeds = sorted(power_df["Speed1"].dropna().astype(int).unique().tolist(), reverse=True)
+
+    return sizes, ratios, speeds
+
+
+def find_power_value(power_df: pd.DataFrame, selected_size, selected_ratio, selected_speed1):
+    if power_df.empty:
+        return None
+
+    size_col = None
+    for col in power_df.columns:
+        if col in ["Ratio", "Speed1"]:
+            continue
+        if normalize_size_value(col) == selected_size:
+            size_col = col
+            break
+
+    if size_col is None:
+        return None
+
+    ratio_series = power_df["Ratio"].apply(normalize_ratio_value)
+    speed_series = pd.to_numeric(power_df["Speed1"], errors="coerce")
+
+    matches = power_df[
+        (ratio_series == selected_ratio) &
+        (speed_series == selected_speed1)
+    ]
+
+    if matches.empty:
+        return None
+
+    power_value = matches.iloc[0][size_col]
+    if pd.isna(power_value):
+        return None
+
+    return float(power_value)
+
+
+def calculate_output_torque(power_value: float, speed1: float) -> float:
+    return (power_value * 60) / (2 * math.pi * speed1)
+
+
+st.title("Gearbox Design Tool")
+st.caption("Convert power to torque, lookup stage parameters, or calculate housing dimensions.")
+
+power_tab, lookup_tab, calculator_tab = st.tabs(
+    ["Power to Torque", "Stage Lookup", "Housing Calculator"]
+)
+
+with power_tab:
+    st.subheader("Power to Torque")
+
+    power_workbook = load_workbook(POWER_FILE, POWER_STAGE_SHEETS)
+
+    if not power_workbook:
+        st.warning(
+            "Could not load the Power to Torque workbook. Make sure `data/Power to Torque.xlsx` exists and the sheet names match the code."
+        )
+    else:
+        left, right = st.columns([1, 2])
+
+        with left:
+            selected_power_stage = st.selectbox(
+                "Stage",
+                list(power_workbook.keys()),
+                key="power_stage",
+            )
+
+            power_df = power_workbook[selected_power_stage]
+            size_options, ratio_options, speed_options = get_power_table_options(power_df)
+
+            selected_power_size = st.selectbox("Size", size_options, key="power_size")
+            selected_power_ratio = st.selectbox("Ratio", ratio_options, key="power_ratio")
+
+            allowed_speeds = [speed for speed in [1500, 1000, 750] if speed in speed_options]
+            selected_speed1 = st.selectbox("Speed1", allowed_speeds, key="power_speed")
+
+        with right:
+            st.subheader("Result")
+
+            power_value = find_power_value(
+                power_df,
+                selected_power_size,
+                selected_power_ratio,
+                selected_speed1,
+            )
+
+            if power_value is None:
+                st.error("No matching power value was found for the selected Stage, Size, Ratio, and Speed1.")
+            else:
+                output_torque = calculate_output_torque(power_value, selected_speed1)
+
+                result_data = pd.DataFrame(
+                    [
+                        {"Parameter": "Stage", "Value": selected_power_stage},
+                        {"Parameter": "Size", "Value": format_value(selected_power_size)},
+                        {"Parameter": "Ratio", "Value": format_value(selected_power_ratio)},
+                        {"Parameter": "Speed1", "Value": format_value(selected_speed1)},
+                        {"Parameter": "Power", "Value": format_value(power_value)},
+                        {"Parameter": "Output Torque", "Value": format_value(output_torque)},
+                    ]
+                )
+
+                st.dataframe(result_data, use_container_width=True, hide_index=True)
+
+                metric_cols = st.columns(2)
+                metric_cols[0].metric("Power", format_value(power_value))
+                metric_cols[1].metric("Output Torque", format_value(output_torque))
+
+                st.markdown("### Formula Used")
+                st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_1}")
 
 with lookup_tab:
-    workbook_data = load_workbook(DATA_FILE)
+    workbook_data = load_workbook(GUIDE_FILE, STAGE_SHEETS)
 
     if not workbook_data:
         st.warning(
@@ -303,7 +436,10 @@ st.divider()
 st.markdown(
     """
 **Notes**
-- The calculator applies the minimum limits shown in the design sheet where needed
+- The Power to Torque workbook is loaded from `data/Power to Torque.xlsx`
+- Power to Torque uses Stage, Size, Ratio, and Speed1 as inputs
+- Stage lookup uses `data/Gearbox Design Guide Data.xlsx`
+- The housing calculator applies the minimum limits shown in the design sheet where needed
 - `B`, `δb`, and `d2s` are calculated as a factor times `d2`
 - `E` is treated as a manual design input
 """

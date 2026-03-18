@@ -275,6 +275,10 @@ with power_tab:
             allowed_speeds = [speed for speed in [1500, 1000, 750] if speed in speed_options]
             selected_speed1 = st.selectbox("Speed1", allowed_speeds, key="power_speed")
 
+            # Store selections for other tabs
+            st.session_state["selected_stage"] = selected_power_stage
+            st.session_state["selected_size"] = selected_power_size
+
         with right:
             st.subheader("Result")
 
@@ -289,6 +293,8 @@ with power_tab:
                 st.error("No matching power value was found for the selected Stage, Size, Ratio, and Speed1.")
             else:
                 output_torque = calculate_output_torque(power_value, selected_speed1)
+
+                st.session_state["calculated_torque"] = output_torque
 
                 result_data = pd.DataFrame(
                     [
@@ -313,27 +319,31 @@ with power_tab:
 with lookup_tab:
     workbook_data = load_workbook(GUIDE_FILE, STAGE_SHEETS)
 
+    selected_stage = st.session_state.get("selected_stage")
+    selected_size = st.session_state.get("selected_size")
+
     if not workbook_data:
         st.warning(
             "No workbook found yet. Put your Excel file at `data/Gearbox Design Guide Data.xlsx` and make sure the sheet names match the ones in the code."
         )
+    elif not selected_stage or selected_stage not in workbook_data:
+        st.info("Select Stage and Size in the Power to Torque tab first.")
     else:
+        stage_df = workbook_data[selected_stage]
+
         left, right = st.columns([1, 2])
 
         with left:
-            selected_stage = st.selectbox("Stage", list(workbook_data.keys()), key="stage_lookup")
-            stage_df = workbook_data[selected_stage]
-
-            if "Size" not in stage_df.columns:
-                st.error(f"The sheet for {selected_stage} does not contain a 'Size' column.")
-            else:
-                size_options = get_size_options(stage_df)
-                selected_size = st.selectbox("Size", size_options, key="size_lookup")
+            st.markdown("### Selected Inputs")
+            st.markdown(f"**Stage:** {selected_stage}")
+            st.markdown(f"**Size:** {selected_size}")
 
         with right:
             st.subheader("Result")
 
-            if "Size" in stage_df.columns:
+            if "Size" not in stage_df.columns:
+                st.error(f"The sheet for {selected_stage} does not contain a 'Size' column.")
+            else:
                 row = find_row_by_size(stage_df, selected_size)
 
                 if row is None:
@@ -356,6 +366,11 @@ with lookup_tab:
 with calculator_tab:
     st.subheader("Housing Dimension Calculator")
 
+    selected_stage = st.session_state.get("selected_stage", "Not selected yet")
+    default_torque = st.session_state.get("calculated_torque", 1000.0)
+
+    st.markdown(f"**Stage from Power to Torque:** {selected_stage}")
+
     input_col, image_col = st.columns([1, 1])
 
     with input_col:
@@ -363,7 +378,12 @@ with calculator_tab:
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            T0 = st.number_input("Torque (T0)", min_value=0.01, value=1000.0, step=10.0)
+            T0 = st.number_input(
+                "Torque (T0)",
+                min_value=0.01,
+                value=float(default_torque),
+                step=10.0,
+            )
             Di = st.number_input("Diameter (Di)", min_value=0.01, value=100.0, step=1.0)
             E = st.number_input("Width of housing (E)", min_value=0.01, value=200.0, step=1.0)
 

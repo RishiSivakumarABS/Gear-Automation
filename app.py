@@ -202,10 +202,9 @@ def get_power_table_options(power_df: pd.DataFrame):
 
     return sizes, ratios, speeds
 
-
-def find_power_value(power_df: pd.DataFrame, selected_size, selected_ratio, selected_speed1):
+def find_power_data(power_df: pd.DataFrame, selected_size, selected_ratio, selected_speed1):
     if power_df.empty:
-        return None
+        return None, None
 
     size_col = None
     for col in power_df.columns:
@@ -216,28 +215,37 @@ def find_power_value(power_df: pd.DataFrame, selected_size, selected_ratio, sele
             break
 
     if size_col is None:
-        return None
+        return None, None
 
     ratio_series = power_df["Ratio"].apply(normalize_ratio_value)
-    speed_series = pd.to_numeric(power_df["Speed1"], errors="coerce")
+    speed1_series = pd.to_numeric(power_df["Speed1"], errors="coerce")
 
     matches = power_df[
         (ratio_series == selected_ratio) &
-        (speed_series == selected_speed1)
+        (speed1_series == selected_speed1)
     ]
 
     if matches.empty:
-        return None
+        return None, None
 
-    power_value = matches.iloc[0][size_col]
+    row = matches.iloc[0]
+
+    power_value = row[size_col]
+    speed2_value = row["Speed2"] if "Speed2" in row.index else None
+
     if pd.isna(power_value):
-        return None
+        return None, None
 
-    return float(power_value)
+    if pd.isna(speed2_value):
+        speed2_value = None
+    else:
+        speed2_value = float(speed2_value)
+
+    return float(power_value), speed2_value
 
 
-def calculate_output_torque(power_value: float, speed1: float) -> float:
-    return (power_value * 60) / (2 * math.pi * speed1)
+def calculate_torque(power_value: float, speed_value: float) -> float:
+    return (power_value * 60) / (2 * math.pi * speed_value)
 
 
 st.title("Gearbox Design Tool")
@@ -282,7 +290,7 @@ with power_tab:
         with right:
             st.subheader("Result")
 
-            power_value = find_power_value(
+            power_value, speed2_value = find_power_data(
                 power_df,
                 selected_power_size,
                 selected_power_ratio,
@@ -292,7 +300,24 @@ with power_tab:
             if power_value is None:
                 st.error("No matching power value was found for the selected Stage, Size, Ratio, and Speed1.")
             else:
-                output_torque = calculate_output_torque(power_value, selected_speed1)
+                torque_basis = st.radio(
+                    "Calculate torque using",
+                    ["Speed1", "Speed2"],
+                    horizontal=True,
+                    key="torque_basis",
+                )
+
+                if torque_basis == "Speed1":
+                    speed_used = selected_speed1
+                    speed_label = "Speed1"
+                else:
+                    if speed2_value is None:
+                        st.error("Speed2 is not available for this selection.")
+                        st.stop()
+                    speed_used = speed2_value
+                    speed_label = "Speed2"
+
+                output_torque = calculate_torque(power_value, speed_used)
 
                 st.session_state["calculated_torque"] = output_torque
 
@@ -302,19 +327,25 @@ with power_tab:
                         {"Parameter": "Size", "Value": format_value(selected_power_size)},
                         {"Parameter": "Ratio", "Value": format_value(selected_power_ratio)},
                         {"Parameter": "Speed1", "Value": format_value(selected_speed1)},
+                        {"Parameter": "Speed2", "Value": format_value(speed2_value) if speed2_value is not None else "-"},
                         {"Parameter": "Power", "Value": format_value(power_value)},
+                        {"Parameter": "Torque Basis", "Value": speed_label},
                         {"Parameter": "Output Torque", "Value": format_value(output_torque)},
                     ]
                 )
 
                 st.dataframe(result_data, use_container_width=True, hide_index=True)
 
-                metric_cols = st.columns(2)
+                metric_cols = st.columns(3)
                 metric_cols[0].metric("Power", format_value(power_value))
-                metric_cols[1].metric("Output Torque", format_value(output_torque))
+                metric_cols[1].metric("Speed Used", f"{speed_label} = {format_value(speed_used)}")
+                metric_cols[2].metric("Output Torque", format_value(output_torque))
 
                 st.markdown("### Formula Used")
-                st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_1}")
+                if torque_basis == "Speed1":
+                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_1}")
+                else:
+                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_2}")
 
 with lookup_tab:
     workbook_data = load_workbook(GUIDE_FILE, STAGE_SHEETS)

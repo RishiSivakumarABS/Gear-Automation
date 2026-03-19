@@ -317,7 +317,7 @@ with power_tab:
                     speed_used = speed2_value
                     speed_label = "Speed2"
 
-                output_torque = calculate_torque(power_value, speed_used)
+                output_torque = calculate_torque(power_value, speed_used) * 1000
 
                 st.session_state["calculated_torque"] = output_torque
 

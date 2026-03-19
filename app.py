@@ -99,9 +99,17 @@ def safe_fourth_root(value: float) -> float:
     return value ** 0.25
 
 
+def get_stage_diameter_count(stage_name: str) -> int:
+    return {
+        "Stage 1": 2,
+        "Stage 2": 3,
+        "Stage 3": 4,
+    }.get(stage_name, 2)
+
+
 def calculate_housing_dimensions(
     T0: float,
-    Di: float,
+    d_values: list[float],
     F: int,
     a1: float,
     d2s_ratio: float,
@@ -119,7 +127,6 @@ def calculate_housing_dimensions(
     r1 = w1
     r2 = w2
     sR = 2
-    phi_i = 1.25 * Di + 10
     sL = 6
     x1 = 2 * w1
     x2 = 2 * w2
@@ -150,14 +157,15 @@ def calculate_housing_dimensions(
     B = B_ratio * d2
     delta_b = delta_b_ratio * d2
 
-    return [
+    phi_values = [1.25 * d + 10 for d in d_values]
+
+    results = [
         {"Name": "Wall thickness of housing base", "Symbol": "w1", "Value": w1, "Unit": "mm", "Remark": ">= 6"},
         {"Name": "Wall thickness of housing cover", "Symbol": "w2", "Value": w2, "Unit": "mm", "Remark": ">= 6"},
         {"Name": "Wall thickness around inspection hole", "Symbol": "w3", "Value": w3, "Unit": "mm", "Remark": ""},
         {"Name": "Base rib thickness next to wall", "Symbol": "r1", "Value": r1, "Unit": "mm", "Remark": ""},
         {"Name": "Cover rib thickness next to wall", "Symbol": "r2", "Value": r2, "Unit": "mm", "Remark": ""},
         {"Name": "Casting slope of ribs", "Symbol": "sR", "Value": sR, "Unit": "deg", "Remark": "approx 1:30"},
-        {"Name": "Outer diameter of each bearing lug", "Symbol": "Φi", "Value": phi_i, "Unit": "mm", "Remark": "i = 0,1,2,...,n"},
         {"Name": "Casting slope of bearing lugs", "Symbol": "sL", "Value": sL, "Unit": "deg", "Remark": "approx 1:10"},
         {"Name": "Base wall-lug axial transition", "Symbol": "x1", "Value": x1, "Unit": "mm", "Remark": ""},
         {"Name": "Cover wall-lug axial transition", "Symbol": "x2", "Value": x2, "Unit": "mm", "Remark": ""},
@@ -183,6 +191,28 @@ def calculate_housing_dimensions(
         {"Name": "Width of housing", "Symbol": "E", "Value": E, "Unit": "mm", "Remark": "The same for all bearing lugs"},
     ]
 
+    for i, (d_val, phi_val) in enumerate(zip(d_values, phi_values), start=1):
+        results.append(
+            {
+                "Name": f"Bearing seat diameter {i}",
+                "Symbol": f"D{i}",
+                "Value": d_val,
+                "Unit": "mm",
+                "Remark": "",
+            }
+        )
+        results.append(
+            {
+                "Name": f"Outer diameter of bearing lug {i}",
+                "Symbol": f"Φ{i}",
+                "Value": phi_val,
+                "Unit": "mm",
+                "Remark": f"(i = 1,2,...,{len(d_values)})",
+            }
+        )
+
+    return results
+
 
 def get_power_table_options(power_df: pd.DataFrame):
     if power_df.empty:
@@ -201,6 +231,7 @@ def get_power_table_options(power_df: pd.DataFrame):
     speeds = [speed for speed in [1500, 1000, 750] if speed in power_df["Speed1"].dropna().astype(int).unique().tolist()]
 
     return sizes, ratios, speeds
+
 
 def find_power_data(power_df: pd.DataFrame, selected_size, selected_ratio, selected_speed1):
     if power_df.empty:
@@ -283,7 +314,6 @@ with power_tab:
             allowed_speeds = [speed for speed in [1500, 1000, 750] if speed in speed_options]
             selected_speed1 = st.selectbox("Speed1", allowed_speeds, key="power_speed")
 
-            # Store selections for other tabs
             st.session_state["selected_stage"] = selected_power_stage
             st.session_state["selected_size"] = selected_power_size
 
@@ -339,13 +369,13 @@ with power_tab:
                 metric_cols = st.columns(3)
                 metric_cols[0].metric("Power", format_value(power_value))
                 metric_cols[1].metric("Speed Used", f"{speed_label} = {format_value(speed_used)}")
-                metric_cols[2].metric("Output Torque", format_value(output_torque))
+                metric_cols[2].metric("Output Torque (Nm)", format_value(output_torque))
 
                 st.markdown("### Formula Used")
                 if torque_basis == "Speed1":
-                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_1}")
+                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_1} \times 1000")
                 else:
-                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_2}")
+                    st.latex(r"T = \frac{P \cdot 60}{2\pi \cdot n_2} \times 1000")
 
 with lookup_tab:
     workbook_data = load_workbook(GUIDE_FILE, STAGE_SHEETS)
@@ -399,6 +429,7 @@ with calculator_tab:
 
     selected_stage = st.session_state.get("selected_stage", "Not selected yet")
     default_torque = st.session_state.get("calculated_torque", 1000.0)
+    diameter_count = get_stage_diameter_count(selected_stage)
 
     st.markdown(f"**Stage from Power to Torque:** {selected_stage}")
 
@@ -408,6 +439,7 @@ with calculator_tab:
         st.markdown("### Inputs")
 
         col1, col2, col3 = st.columns(3)
+
         with col1:
             T0 = st.number_input(
                 "Torque (T0)",
@@ -415,7 +447,6 @@ with calculator_tab:
                 value=float(default_torque),
                 step=10.0,
             )
-            Di = st.number_input("Diameter (Di)", min_value=0.01, value=100.0, step=1.0)
             E = st.number_input("Width of housing (E)", min_value=0.01, value=200.0, step=1.0)
 
         with col2:
@@ -445,6 +476,20 @@ with calculator_tab:
                 step=0.05,
             )
 
+        st.markdown("### Bearing Seat Diameters")
+        d_values = []
+        d_cols = st.columns(min(diameter_count, 4))
+        for i in range(diameter_count):
+            with d_cols[i]:
+                d_val = st.number_input(
+                    f"D{i + 1}",
+                    min_value=0.01,
+                    value=100.0,
+                    step=1.0,
+                    key=f"bearing_diameter_{i + 1}",
+                )
+                d_values.append(d_val)
+
     with image_col:
         st.markdown("### Reference Drawing")
         if REFERENCE_IMAGE.exists():
@@ -458,7 +503,7 @@ with calculator_tab:
 
     calculated_rows = calculate_housing_dimensions(
         T0=T0,
-        Di=Di,
+        d_values=d_values,
         F=int(F),
         a1=a1,
         d2s_ratio=d2s_ratio,
@@ -497,5 +542,6 @@ st.markdown(
 - The housing calculator applies the minimum limits shown in the design sheet where needed
 - `B`, `δb`, and `d2s` are calculated as a factor times `d2`
 - `E` is treated as a manual design input
+- The number of bearing seat diameters and lug outer diameters changes automatically with stage
 """
 )
